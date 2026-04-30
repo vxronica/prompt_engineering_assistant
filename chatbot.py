@@ -1,7 +1,7 @@
 # chatbot.py
 
 import re
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, get_close_matches
 
 import numpy as np
 import torch
@@ -76,7 +76,8 @@ knowledge_base = [
     "ReAct prompting combines reasoning with actions like retrieving information to help models handle exceptions and produce more reliable answers.",
     "Reflexion uses linguistic feedback to help models learn from previous mistakes by generating an answer, evaluating it, and improving it based on feedback.",
     "Multimodal chain-of-thought prompting allows models to reason using multiple types of data such as text and images.",
-    "An AI token is a unit of language that an LLM uses for language processing. A token can be a whole word, part of a word, or punctation. LLMs use tokens to process input, predict a sequence of tokens that are most likely correct, then converts the tokens back to words that can be read and understood."
+    "An AI token is a unit of language that an LLM uses for language processing. A token can be a whole word, part of a word, or punctation. LLMs use tokens to process input, predict a sequence of tokens that are most likely correct, then converts the tokens back to words that can be read and understood.",
+    "A prompt is the input, question, instruction, or task given to a language model to guide its response.",
 ]
 
 
@@ -124,14 +125,50 @@ def generate_answer(prompt, max_new_tokens=120):
 def fuzzy_match(text, target, threshold=0.70):
     return SequenceMatcher(None, text, target).ratio() >= threshold
 
+def correct_query_terms(text):
+    vocabulary = [
+        "prompt", "prompting", "engineering", "automatic",
+        "hallucination", "hallucinations", "rag", "token",
+        "temperature", "top", "frequency", "presence",
+        "penalty", "zero", "shot", "few", "chain", "thought",
+        "retrieval", "generation", "model", "context"
+    ]
 
+    corrected_words = []
+
+    for word in text.split():
+        match = get_close_matches(word, vocabulary, n=1, cutoff=0.75)
+
+        if match:
+            corrected_words.append(match[0])
+        else:
+            corrected_words.append(word)
+
+    return " ".join(corrected_words)
+
+def keyword_overlap_score(query, text):
+    q_words = set(query.split())
+    t_words = set(re.sub(r"[^\w\s]", "", text.lower()).split())
+
+    if len(q_words) == 0:
+        return 0
+
+    return len(q_words & t_words) / len(q_words)
+
+def phrase_match_boost(query, text):
+    query_terms = query.split()
+    text_lower = text.lower()
+
+    matches = sum(1 for term in query_terms if term in text_lower)
+    return matches / len(query_terms)
 # -----------------------------
 # Main Chatbot Function
 # -----------------------------
-def ask_chatbot(question, top_k=4, conf_threshold=0.35, debug=False):
+def ask_chatbot(question, top_k=2, conf_threshold=0.45, debug=False):
 
     # Clean input
     clean_q = re.sub(r"[^\w\s]", "", question.lower()).strip()
+    clean_q = correct_query_terms(clean_q)
 
     # Greeting handling
     greetings = ["hi", "hello", "hey", "hi there", "hey there"]
@@ -144,10 +181,7 @@ def ask_chatbot(question, top_k=4, conf_threshold=0.35, debug=False):
         return "I don't know based on my knowledge base."
 
     # Handle common question explicitly
-    if (
-        fuzzy_match(clean_q, "what is prompt engineering") or
-        fuzzy_match(clean_q, "explain what prompt engineering is")
-    ):
+    if clean_q in ["what is prompt engineering", "explain what prompt engineering is"]:
         return "Prompt engineering is the process of developing and improving prompts to better understand and use large language models."
 
     # Normalize token question
@@ -159,7 +193,21 @@ def ask_chatbot(question, top_k=4, conf_threshold=0.35, debug=False):
     q_vec = normalize(q_vec)
 
     # Similarity scoring
-    scores = (q_vec @ kb_vectors.T).flatten()
+    semantic_scores = (q_vec @ kb_vectors.T).flatten()
+    
+    keyword_scores = np.array([
+        keyword_overlap_score(clean_q, kb) for kb in knowledge_base
+    ])
+
+    phrase_scores = np.array([
+        phrase_match_boost(clean_q, kb) for kb in knowledge_base
+    ])
+
+    scores = (
+        0.4 * semantic_scores +
+        0.3 * keyword_scores +
+        0.3 * phrase_scores
+    )
     top_indices = np.argsort(scores)[::-1][:top_k]
     top_score = float(scores[top_indices[0]])
 
@@ -176,11 +224,20 @@ def ask_chatbot(question, top_k=4, conf_threshold=0.35, debug=False):
 
     # Prompt
     prompt = (
-        "You are a helpful chatbot.\n"
-        "Answer ONLY using the context.\n"
-        "If unsure, say: I don't know based on my knowledge base.\n\n"
-        f"Context:{context}\n\n"
-        f"Question: {question}\nAnswer:"
-    )
+    "You are a helpful educational chatbot.\n"
+    "Answer ONLY using the context.\n"
+    "Write the answer as one clear, complete sentence.\n"
+    "Do not answer with only a phrase.\n"
+    "If unsure, say: I don't know based on my knowledge base.\n\n"
+    f"Context:{context}\n\n"
+    f"Question: {question}\n"
+    "Answer in one complete sentence:"
+)
 
-    return generate_answer(prompt)
+    answer = generate_answer(prompt)
+
+    if len(answer.split()) < 4:
+
+        return knowledge_base[top_indices[0]]
+
+    return answer
