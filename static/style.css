@@ -1,0 +1,95 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f4f6fb;
+    color: #222;
+}
+
+.page-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    padding: 40px;
+}
+
+.tutorial-panel,
+.chat-panel {
+    background: white;
+    border-radius: 18px;
+    padding: 30px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+    margin-top: 0;
+    color: #4b4fdb;
+}
+
+.lesson-card {
+    background: #f0f2ff;
+    padding: 18px;
+    border-radius: 14px;
+    margin-top: 18px;
+}
+
+.lesson-card h2 {
+    font-size: 18px;
+    margin-top: 0;
+}
+
+.chat-box {
+    height: 430px;
+    overflow-y: auto;
+    background: #f8f9fc;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.user-message,
+.bot-message {
+    max-width: 80%;
+    padding: 12px 15px;
+    border-radius: 14px;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+
+.user-message {
+    background: #4b4fdb;
+    color: white;
+    margin-left: auto;
+}
+
+.bot-message {
+    background: #e9e9ef;
+    color: #222;
+    margin-right: auto;
+}
+
+.input-area {
+    display: flex;
+    gap: 10px;
+}
+
+input {
+    flex: 1;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #ccc;
+    font-size: 15px;
+}
+
+button {
+    padding: 14px 22px;
+    border: none;
+    border-radius: 12px;
+    background: #4b4fdb;
+    color: white;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #3438b8;
+}
