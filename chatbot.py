@@ -1,243 +1,568 @@
 # chatbot.py
 
-import re
-from difflib import SequenceMatcher, get_close_matches
+# imports
 
+# re is used to clean text. e.g:removing punctuation
+# get_close_matches is used to fix small spelling mistakes in user questions
+# numpy is used for vector math and ranking similarity scores
+# torch is used by the Hugging Face model during text generation
+# SentenceTransformer turns text into embeddings for semantic search
+import re
+from difflib import get_close_matches
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
+# These load the FLAN-T5 tokenizer and generation model
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-
-# -----------------------------
-# Knowledge Base
-# -----------------------------
+# knowledge base
+# short chunks work better for RAG because they are easier to match to user questions.
 knowledge_base = [
-    "AI hallucinations happen when language models confidently generate false or nonsensical information.",
-    "A good type of prompting is chain-of-thought prompting, where you instruct the model to reason out an answer step-by-step. This helps reduce logic gaps and makes it harder for the model to hallucinate mid prompt.",
-    "Some simple techniques that help make a good prompt are using Chain-of-Thought, using reference material such as RAG, asking the AI to provide sources, and being very specific about your expectations for what you want the output to look like.",
-    "Chain-of-thought prompting can be used for multi-step problems, math, logic problems, complex problems, and troubleshooting problems. It is useful when a step-by-step approach is best.",
-    "Providing AI with extra material to pad its knowledge base gives the AI a factual base to work from. Using a prompt such as 'Based on this document, please answer...' helps reduce hallucinations.",
-    "When AI is required to cite its source, it tends to give evidence from recognized sources. This also gives the user a way to double check the answer.",
-    "A good prompt structure for a cited answer could be: 'Answer the following question and for each key point, provide a citation or source. If you're unsure of a source, indicate that.' This helps create transparency in the AI's response.",
-    "Sometimes explicitly telling AI to communicate its confidence level and acknowledge limitations is helpful. A phrase such as 'If you're uncertain about any part of your answer, state your confidence level' prevents AI from presenting guesses as facts.",
-    "Multi-persona prompting is when you ask the AI to consider a problem from multiple perspectives or different roles. This helps create internal checks and balances, reveals blind spots, and reduces one-dimensional thinking that can lead to hallucinations.",
-    "An effective multi-persona prompt might be: 'Analyze this decision from three perspectives: 1) As a CFO focused on financial risk, 2) As the head of R&D focused on innovation, and 3) As a customer experience manager focused on user experience. Then using these viewpoints, produce a balanced recommendation.'",
-    "For maximum effectiveness, use a layered approach: start with reference materials to ground the AI, then use Chain-of-Thought to work through the problem, and finally ask for citations to verify key claims.",
-    "Common mistakes in prompt engineering include being too vague, not specifying context, not providing examples of the desired output format, failing to specify the AI's persona, accepting the first answer without iteration, and not instructing the AI on how to handle uncertainty.",
-    "The more detailed your prompt, the more likely the AI response will be useful. A well-constructed prompt typically includes clear context, a specific task or question, constraints or format requirements, reference materials if possible, and instructions for handling uncertainty.",
-    "Running the same prompt multiple times and comparing the output can help reveal hallucinations if the information varies greatly.",
-    "Giving the AI permission to say 'I don't know' can be very useful in getting correct information. You can also ask the AI to review its own work for inaccuracies.",
-    "Prompt engineering is the process of developing and improving prompts to better understand and use large language models.",
-    "Prompt engineering involves designing techniques that help models interact with tasks more effectively.",
-    "When designing and testing prompts, users typically interact with a model through an API. Adjusting the settings for the model can change how responses are generated. Responses can become more factual or more creative depending on the temperature or top-p settings.",
-    "Temperature adjusts how deterministic the responses are. Lower temperature helps produce more factual results. Higher temperature helps produce more creative but less factual responses.",
-    "Top-p is a sampling technique used with temperature. Lower top-p values tend to produce more exact and factual responses. Higher top-p values allow more variety and creativity.",
-    "Max length manages the number of tokens in the model response to prevent answers from being too long. It also helps control costs.",
-    "A stop sequence is a string that stops the model from continuing to generate tokens. Stop sequences can help control output length and output structure.",
-    "A frequency penalty can be applied to control how many times a token appears in the response. A higher frequency penalty decreases repeated wording.",
-    "A presence penalty applies a penalty on repeated tokens regardless of how many times they repeat. Increasing this value can lead to more diverse and creative text, while lower values help the language model stay focused.",
-    "Do not modify both temperature and top-p at the same time. Do not modify both frequency and presence penalty at the same time.",
-    "Response results can vary depending on which model and which version of the model is used.",
-    "Some common elements of prompts include instructions, context, input data, and output indicators.",
-    "Instructions tell the language model to perform a specific task. Context gives the model additional external information to guide better responses. Input data is the question or content the user wants processed. Output indicators tell the model what type or format of output is desired.",
-    "Designing prompts is an iterative process, so users should start with simple prompts and gradually adjust them to get better outputs. If the task is large, it should be broken into smaller subtasks.",
-    "Clearly indicate the instructions for the model such as write, summarize, or classify at the beginning of the prompt. Also be specific by including relevant details.",
-    "Do not include too many details because there is a limit to the number of input tokens. The prompt should still be specific and direct. Avoid imprecise descriptions such as 'a few' rather than a specific number or range.",
-    "Tell the model what to do rather than focusing on what not to do.",
-    "Zero-shot prompting is a simple prompting technique that does not provide any examples. It can work well because models are trained on large amounts of data.",
-    "If a zero-shot prompt does not provide the desired response, use a few-shot prompt.",
-    "Few-shot prompting is a simple prompting technique that provides one or more examples. It is helpful for guiding output style or format.",
-    "Simple tasks can use one example in few-shot prompting, while more complex tasks may require more examples such as 3-shot or 5-shot.",
-    "Few-shot prompting does not work as well with complex reasoning tasks such as advanced arithmetic, commonsense reasoning, and symbolic reasoning. Chain-of-thought prompting is better for these tasks.",
-    "Chain-of-thought prompting is an advanced prompting technique that allows the language model to perform complex reasoning by using intermediate reasoning steps.",
-    "An example of a zero-shot chain-of-thought prompt includes an instruction such as 'think step-by-step.'",
-    "Meta prompting is an advanced prompting technique that focuses on the structure and syntax of a task rather than its content.",
-    "Some characteristics of meta prompting are that it is structure-oriented, syntax-focused, uses abstract examples, is versatile, and uses a categorical approach.",
-    "Meta prompting has advantages over few-shot prompting including token efficiency, fairer comparisons, and zero-shot efficiency not influenced by specific examples.",
-    "Meta prompting works well for complex reasoning tasks such as mathematical problem-solving and coding challenges.",
-    "Self-consistency is a very advanced prompting technique that samples multiple reasoning paths through few-shot chain-of-thought and then selects the most consistent answer.",
-    "Generate knowledge prompting is a prompting technique that incorporates knowledge for the model to increase the accuracy of its predictions.",
-    "Prompt chaining is a prompting technique that improves reliability and performance by breaking large tasks into smaller subtasks.",
+
+    # basic Definitions
+    "A prompt is the input, instruction, question, or task given to an AI model to guide its response.",
+    "Prompt engineering is the process of developing and improving prompts to get better responses from large language models.",
+    "A large language model, or LLM, is an AI system trained on large amounts of text to understand and generate language.",
+    "A token is a unit of language that a model uses to process text. A token can be a word, part of a word, or punctuation.",
+    "An AI hallucination is when a language model confidently generates false, incorrect, or nonsensical information.",
+    "Retrieval augmented generation, or RAG, is a technique where a model uses retrieved external knowledge to answer questions.",
+    "Chain-of-thought prompting asks the model to reason through a problem step by step.",
+    "Zero-shot prompting means asking a model to complete a task without giving examples.",
+    "Few-shot prompting means giving a model one or more examples before asking it to complete a task.",
+    "One-shot prompting is a type of few-shot prompting that gives the model exactly one example.",
+    "Meta prompting focuses on the structure and syntax of a task rather than the content.",
+    "Self-consistency samples multiple reasoning paths and chooses the most consistent answer.",
+    "Tree of Thoughts explores multiple reasoning paths before choosing an answer.",
+    "Automatic prompt engineering is when a model generates and evaluates its own prompts.",
+    "Prompt chaining breaks a large task into smaller subtasks.",
+    "Generate knowledge prompting adds useful knowledge before answering to improve accuracy.",
+    "ReAct prompting combines reasoning with actions such as retrieving information or using tools.",
+    "Reflexion uses feedback to help a model evaluate and improve its previous answer.",
+    "Program-aided language models, or PAL, use programming tools such as Python as part of the reasoning process.",
+    "Multi-persona prompting asks the model to consider a problem from multiple roles or perspectives.",
+    "Temperature controls how deterministic or creative a model response is.",
+    "Top-p controls how much variety the model can use when choosing possible next tokens.",
+    "A stop sequence is a string that tells the model when to stop generating.",
+    "A frequency penalty reduces repeated wording by discouraging tokens that have already appeared often.",
+    "A presence penalty discourages repeated tokens regardless of how many times they appeared.",
+    "Max length limits the number of tokens in a model response.",
+
+    # prompt Writing
+    "Good prompts usually include clear instructions, relevant context, input data, and a desired output format.",
+    "To write better prompts, include a specific task, useful context, constraints, examples, and the desired output format.",
+    "To build better prompts, start with a simple prompt, test the response, and revise the prompt based on what is missing or unclear.",
+    "A good prompt should be specific and direct instead of vague or unclear.",
+    "Adding examples to a prompt can help the model understand the desired style, structure, or format.",
+    "Instructions tell the model what task to perform, such as write, summarize, classify, or explain.",
+    "Context gives the model background information that helps it produce a more relevant answer.",
+    "Input data is the specific question, text, or material the user wants the model to respond to.",
+    "Output indicators tell the model what format the answer should follow, such as a list, paragraph, table, or summary.",
+    "Tell the model what to do rather than focusing only on what not to do.",
+    "If a task is large, break it into smaller subtasks so the model can handle each part more clearly.",
+    "Designing prompts is an iterative process, so users should start simple and adjust the prompt based on the output.",
+    "Prompt engineering helps users communicate more effectively with AI systems.",
+
+    # hallucinations
+    "AI hallucinations can happen when a model lacks reliable context or guesses missing information.",
+    "AI hallucinations can also happen when generated text sounds correct but is not factual.",
+    "AI hallucinations often happen when a model tries to predict likely text without enough factual grounding.",
+    "To reduce hallucinations, provide reliable reference material for the model to use.",
+    "To reduce hallucinations, ask the model to cite sources or explain where information came from.",
+    "To reduce hallucinations, give the model permission to say 'I don't know' when it is unsure.",
+    "To reduce hallucinations, ask the model to review its own answer for possible inaccuracies.",
+    "Running the same prompt multiple times and comparing outputs can help reveal possible hallucinations.",
+    "If the model gives very different answers to the same prompt, the answer may be unreliable.",
+    "Asking the model to state its confidence level can help prevent it from presenting guesses as facts.",
+    "A useful uncertainty prompt is: If you are uncertain about any part of your answer, state your confidence level.",
+    "RAG can reduce hallucinations because the model has relevant context to use when generating an answer.",
+    "Providing reference material gives the model a factual base to use when answering.",
+ 
+    # RAG
+    "RAG helps ground model responses in specific reference material instead of relying only on the model's internal training.",
+    "RAG is useful for factual or knowledge-intensive questions.",
+    "A RAG chatbot retrieves relevant knowledge base chunks before generating a response.",
+    "In a RAG pipeline, the user question is embedded, compared to knowledge base embeddings, and matched with the most relevant contexts.",
+    "After retrieval, the selected contexts are passed to the language model so it can generate a grounded answer.",
+    "Semantic retrieval uses embeddings to find text with similar meaning instead of exact keyword matches.",
+    "Semantic retrieval is a search technique that finds information based on meaning and context rather than exact keyword matches.",
+    "Embeddings are numerical vector representations of text used for semantic similarity comparisons.",
+    "Cosine similarity measures how similar two embedding vectors are.",
+    "SentenceTransformers can generate embeddings for semantic search and retrieval tasks.",
+
+    # citations and sources
+    "Asking the AI to provide citations can make its response easier to verify.",
+    "A good citation prompt is: Answer the question and provide a citation or source for each key point.",
+    "If the model is unsure of a source, it should say so instead of inventing one.",
+    "Citations help users double-check whether an AI response is accurate.",
+    "A useful reference-based prompt is: Based on this document, please answer the question.",
+
+    # chain-of-thought
+    "Chain-of-thought prompting is useful for multi-step problems, math, logic, troubleshooting, and complex reasoning.",
+    "Chain-of-thought prompting can reduce logic gaps by encouraging intermediate reasoning steps.",
+    "A simple chain-of-thought prompt is: Think step by step before answering.",
+    "Chain-of-thought prompting is usually better than few-shot prompting for complex reasoning tasks.",
+    "Chain-of-thought prompting is useful when the task requires step-by-step reasoning.",
+    "Chain-of-thought reasoning means solving a problem through intermediate reasoning steps before giving the final answer.",
+
+    # few-Shot / zero-Shot
+    "Zero-shot prompting can work well for simple tasks because language models are trained on large amounts of text.",
+    "Few-shot prompting is useful when the user wants to guide the model's style, structure, or format.",
+    "Few-shot prompting may work better than zero-shot prompting when the desired output format is specific.",
+    "One-shot prompting may be enough for simple tasks, while several examples may be better for more complex formatting needs.",
+    "Few-shot prompting does not work as well for complex reasoning tasks such as advanced arithmetic or symbolic reasoning.",
+
+    # comparisons
+    "Zero-shot prompting uses no examples, while few-shot prompting gives the model one or more examples.",
+    "One-shot prompting gives one example, while few-shot prompting can give multiple examples.",
+    "Few-shot prompting is usually better than one-shot prompting when the task needs stronger guidance.",
+    "One-shot prompting may be better than few-shot prompting when the task is simple and only needs one example.",
+    "Chain-of-thought prompting is better than few-shot prompting when a task requires step-by-step reasoning.",
+    "RAG is better than ordinary prompting when the answer needs specific reference material or factual grounding.",
+    "There is no single best prompting technique because the best method depends on the task.",
+    "Chain-of-thought prompting is useful for complex reasoning tasks, while few-shot prompting is useful for showing examples of the desired format.",
+    "RAG is useful when the answer needs factual grounding from reference material.",
+    "Few-shot prompting is usually better than one-shot prompting when the task needs stronger guidance, but one-shot prompting may be enough for simple tasks.",
+    "Chain-of-thought prompting is usually better than one-shot or few-shot prompting when the task requires step-by-step reasoning.",
+
+    # Advanced prompting techniques
+    "Meta prompting can be useful for complex reasoning tasks such as mathematical problem-solving or coding challenges.",
+    "Prompt chaining is useful for conversational assistants, debugging, and answering questions from long texts.",
     "In prompt chaining, the output from one step is used as input for the next step.",
-    "Prompt chaining is helpful for conversational assistants, debugging problems, and answering questions using quotes from large texts.",
-    "A prompt chaining example for long text question answering is to first extract quotes from the text and then use those quotes in the next step to answer the question.",
-    "Tree of Thoughts is a prompting technique that uses tree search ideas to explore multiple reasoning paths and determine a better response.",
-    "Chain-of-thought and self-consistency are more linear thought processes, while Tree of Thoughts can explore more possible paths.",
-    "Retrieval augmented generation, or RAG, is a prompting technique used for complex and knowledge-intensive tasks. It allows a language model to access external sources for its knowledge base.",
-    "RAG is useful for factual information that can change over time without having to retrain the entire model.",
-    "Automatic reasoning and tool-use, or ART, combines chain-of-thought reasoning with the use of tool libraries.",
-    "ART allows a language model to respond to a new task, choose a multi-step reasoning process, and call external tools to integrate into its output.",
-    "Automatic prompt engineering is a prompting technique where a model generates and evaluates its own prompts.",
-    "Automatic prompt engineering can help discover a better zero-shot chain-of-thought prompt than a human-written prompt.",
-    "Active-prompt is a prompting technique where a model generates multiple responses and each response is given an uncertainty metric. The most uncertain questions are selected to be annotated by a human.",
-    "Directional stimulus prompting is a prompting technique that uses a tunable method to guide the model toward generating a desired summary.",
-    "Program-aided language models, or PAL, use programming tools such as Python as an intermediate reasoning step. This can improve accuracy compared to using only text reasoning.",
-    "ReAct prompting combines reasoning with actions like retrieving information to help models handle exceptions and produce more reliable answers.",
-    "Reflexion uses linguistic feedback to help models learn from previous mistakes by generating an answer, evaluating it, and improving it based on feedback.",
-    "Multimodal chain-of-thought prompting allows models to reason using multiple types of data such as text and images.",
-    "An AI token is a unit of language that an LLM uses for language processing. A token can be a whole word, part of a word, or punctation. LLMs use tokens to process input, predict a sequence of tokens that are most likely correct, then converts the tokens back to words that can be read and understood.",
-    "A prompt is the input, question, instruction, or task given to a language model to guide its response.",
+    "Tree of Thoughts can explore more possibilities than a single linear chain-of-thought response.",
+    "Automatic prompt engineering can help discover better prompts than a human-written prompt.",
+    "Active-prompt selects uncertain questions for human annotation after generating multiple responses.",
+    "Directional stimulus prompting uses guidance to steer the model toward a desired summary.",
+    "Multimodal chain-of-thought prompting allows models to reason using multiple types of data, such as text and images.",
+    "Multi-persona prompting can reveal blind spots and reduce one-dimensional thinking.",
+    "An example of multi-persona prompting is asking the model to answer as a scientist, an ethicist, and a student.",
+
+    # model settings
+    "Lower temperature values usually produce more focused and factual responses.",
+    "Higher temperature values usually produce more creative but less predictable responses.",
+    "Temperature affects output by controlling randomness: lower temperature makes responses more focused and factual, while higher temperature makes responses more creative and less predictable.",
+    "Lower top-p values usually produce more focused responses.",
+    "Higher top-p values usually allow more variety and creativity.",
+    "Max length can prevent responses from becoming too long and can help control cost.",
+    "Stop sequences can help control response length and structure.",
+    "Higher presence penalty values can make text more diverse, while lower values help the model stay focused.",
+    "Users should usually avoid changing temperature and top-p at the same time.",
+    "Users should usually avoid changing frequency penalty and presence penalty at the same time.",
+    "AI response results can vary depending on the model and model version used.",
+
+    # chatbot purpose
+    "This chatbot teaches prompt engineering in a friendly, supportive, and slightly academic tone.",
+    "This chatbot is designed for college students, AI beginners, and everyday users who want better AI responses.",
+    "This chatbot gives concise educational answers about prompting, hallucinations, and AI response quality."
 ]
 
 
-# -----------------------------
 # Embedding Model
-# -----------------------------
+
+# Load the embedding model which turns each text chunk into a vector
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-
+# this function normalizes vectors so cosine similarity works correctly
 def normalize(vectors):
+    # calculate the length of each vector
+    # tiny number prevents division by zero
     norms = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-12
+
+    # fivide each vector by its length
     return vectors / norms
 
 
+# convert all knowledge base chunks into embeddings
 kb_vectors = embedder.encode(knowledge_base, convert_to_numpy=True)
+
+# normalize the knowledge base embeddings.
 kb_vectors = normalize(kb_vectors)
 
+# generation Model
 
-# -----------------------------
-# Generation Model
-# -----------------------------
+# this is the model used to generate the final answer
 MODEL_NAME = "google/flan-t5-small"
 
+# the tokenizer converts normal text into tokens
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+# the model generates text from the retrieved context
 model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
 
 
-def generate_answer(prompt, max_new_tokens=120):
+# this function sends a prompt to FLAN-T5 and returns the generated answer
+def generate_answer(prompt, max_new_tokens=100):
+    # convert the prompt into tokens
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
 
+    # no_grad means we are not training the model, only using it.
     with torch.no_grad():
         output_ids = model.generate(
             **inputs,
+
+            # limits how long the answer can be
             max_new_tokens=max_new_tokens,
+
+            # makes output more consistent and less random
             do_sample=False,
+
+            # greedy decoding chooses the most likely next token each time
             num_beams=1
         )
 
+    # decode the model output back into readable text
     return tokenizer.decode(output_ids[0], skip_special_tokens=True).strip()
 
 
-# -----------------------------
-# Utility Functions
-# -----------------------------
-def fuzzy_match(text, target, threshold=0.70):
-    return SequenceMatcher(None, text, target).ratio() >= threshold
 
+# text cleaning and query helpers
+
+# cleans user text before searching
+def clean_text(text):
+    # lowercase makes matching easier
+    text = text.lower()
+
+    # remove punctuation and special characters
+    text = re.sub(r"[^\w\s]", "", text)
+
+    # remove spaces at the beginning or end
+    return text.strip()
+
+
+# corrects small typos in important prompt engineering terms
 def correct_query_terms(text):
+    # these are important words the chatbot should recognize
     vocabulary = [
-        "prompt", "prompting", "engineering", "automatic",
-        "hallucination", "hallucinations", "rag", "token",
-        "temperature", "top", "frequency", "presence",
-        "penalty", "zero", "shot", "few", "chain", "thought",
-        "retrieval", "generation", "model", "context"
+        "prompt", "prompts", "prompting", "engineering",
+        "hallucination", "hallucinations",
+        "rag", "retrieval", "generation",
+        "token", "tokens",
+        "temperature", "top",
+        "few", "shot", "zero", "one",
+        "chain", "thought", "reasoning",
+        "llm", "model", "context",
+        "reduce", "better", "write", "build",
+        "best", "technique", "techniques",
+        "cause", "causes",
+        "citation", "citations", "source", "sources",
+        "frequency", "presence", "penalty",
+        "length", "stop", "sequence",
+        "meta", "automatic", "persona"
     ]
 
     corrected_words = []
 
+    # check each word in the user question
     for word in text.split():
+        # find the closest matching known word
         match = get_close_matches(word, vocabulary, n=1, cutoff=0.75)
 
+        # use the corrected word if a close match is found
         if match:
             corrected_words.append(match[0])
         else:
             corrected_words.append(word)
 
+    # rebuild the corrected question
     return " ".join(corrected_words)
 
-def keyword_overlap_score(query, text):
-    q_words = set(query.split())
-    t_words = set(re.sub(r"[^\w\s]", "", text.lower()).split())
 
+# removes common words that do not help retrieval
+def remove_stopwords(text):
+    stopwords = {
+        "what", "is", "a", "an", "the", "how", "can", "i",
+        "does", "do", "are", "to", "of", "and", "in", "on",
+        "for", "me", "my", "about", "tell", "more", "please"
+    }
+
+    # keep only useful words
+    return " ".join(word for word in text.split() if word not in stopwords)
+
+
+
+# retrieval Scoring Functions
+
+# measures exact keyword overlap between the user query and a KB chunk
+def keyword_overlap_score(query, text):
+    # unique words from the user query
+    q_words = set(query.split())
+
+    # unique words from the KB chunk
+    t_words = set(clean_text(text).split())
+
+    # avoid division by zero
     if len(q_words) == 0:
         return 0
 
+    # return the percentage of query words that appear in the chunk
     return len(q_words & t_words) / len(q_words)
 
-def phrase_match_boost(query, text):
-    query_terms = query.split()
+
+# measures whether the important topic words match
+def topic_match_score(search_q, text):
+    query_words = set(search_q.split())
+    text_words = set(clean_text(text).split())
+
+    # rhese are the important domain words for the chatbot
+    important_words = {
+        "prompt", "prompts", "prompting", "engineering",
+        "llm", "token", "tokens",
+        "hallucination", "hallucinations",
+        "temperature", "top", "rag",
+        "few", "shot", "zero", "one",
+        "chain", "thought", "reasoning",
+        "best", "technique", "techniques",
+        "build", "better",
+        "citation", "citations", "source", "sources",
+        "frequency", "presence", "penalty",
+        "length", "stop", "sequence",
+        "meta", "automatic", "persona"
+    }
+
+    # get only important topic words from the query
+    query_topics = query_words & important_words
+
+    # if there are no important topic words, return 0
+    if len(query_topics) == 0:
+        return 0
+
+    # return how many important query topics appear in the KB chunk
+    return len(query_topics & text_words) / len(query_topics)
+
+
+# detects what kind of question the user asked
+def detect_intent(question):
+    q = question.lower()
+
+    # comparison questions should be checked first
+    if (
+        "difference" in q
+        or "compare" in q
+        or "which is better" in q
+        or "better than" in q
+        or "better" in q
+    ):
+        return "comparison"
+
+    # recommendation questions
+    elif "best" in q:
+        return "recommendation"
+
+    # definition questions
+    elif q.startswith("what is") or q.startswith("what are") or q.startswith("define"):
+        return "definition"
+
+    # how-to questions
+    elif q.startswith("how") or "how to" in q:
+        return "how_to"
+
+    # cause/explanation questions
+    elif q.startswith("why") or "what causes" in q:
+        return "explanation"
+
+    # default category
+    else:
+        return "general"
+
+
+# gives extra score to chunks that match the question type
+def intent_match_score(intent, text):
     text_lower = text.lower()
 
-    matches = sum(1 for term in query_terms if term in text_lower)
-    return matches / len(query_terms)
-# -----------------------------
-# Main Chatbot Function
-# -----------------------------
-def ask_chatbot(question, top_k=2, conf_threshold=0.45, debug=False):
+    # definition chunks usually contain "is" or "means."
+    if intent == "definition":
+        if " is " in text_lower or "means" in text_lower:
+            return 1.0
 
-    # Clean input
-    clean_q = re.sub(r"[^\w\s]", "", question.lower()).strip()
+    # how-to chunks often begin with "To..." or use action words
+    elif intent == "how_to":
+        if (
+            text_lower.startswith("to ")
+            or "include" in text_lower
+            or "provide" in text_lower
+            or "ask" in text_lower
+            or "use" in text_lower
+            or "helps" in text_lower
+        ):
+            return 1.0
+
+    # explanation chunks often explain causes
+    elif intent == "explanation":
+        if "happen" in text_lower or "when" in text_lower or "because" in text_lower:
+            return 1.0
+
+    # comparison chunks compare two techniques
+    elif intent == "comparison":
+        if "while" in text_lower or "better than" in text_lower or "usually better" in text_lower:
+            return 1.0
+
+    # recommendation chunks answer "best technique" style questions
+    elif intent == "recommendation":
+        if "no single best" in text_lower or "depends on the task" in text_lower or "useful for" in text_lower:
+            return 1.0
+
+    # no intent match
+    return 0.0
+
+
+# combines all scoring methods to rank KB chunks
+def compute_scores(search_q, clean_q):
+    # embed the cleaned user query
+    q_vec = embedder.encode([search_q], convert_to_numpy=True)
+
+    # normalize query embedding
+    q_vec = normalize(q_vec)
+
+    # semantic score compares query embedding to every KB embedding
+    semantic_scores = (q_vec @ kb_vectors.T).flatten()
+
+    # keyword score checks exact word overlap
+    keyword_scores = np.array([
+        keyword_overlap_score(search_q, kb) for kb in knowledge_base
+    ])
+
+    # topic score checks important domain words
+    topic_scores = np.array([
+        topic_match_score(search_q, kb) for kb in knowledge_base
+    ])
+
+    # detect question type
+    intent = detect_intent(clean_q)
+
+    # intent score checks if KB chunks match the question type
+    intent_scores = np.array([
+        intent_match_score(intent, kb) for kb in knowledge_base
+    ])
+
+    # final weighted score
+    # semantic similarity is the largest part, but keyword/topic/intent help avoid weird matches
+    scores = (
+        0.45 * semantic_scores +
+        0.25 * keyword_scores +
+        0.20 * topic_scores +
+        0.10 * intent_scores
+    )
+
+    return scores
+
+
+# checks whether the generated answer still mentions the user's main topic
+def answer_mentions_topic(answer, search_q):
+    answer_words = set(clean_text(answer).split())
+    query_words = set(search_q.split())
+
+    important_words = {
+        "prompt", "prompts", "prompting", "engineering",
+        "hallucination", "hallucinations",
+        "rag", "token", "tokens",
+        "few", "shot", "zero", "one",
+        "chain", "thought", "reasoning",
+        "best", "technique", "techniques",
+        "build", "better",
+        "citation", "citations", "source", "sources",
+        "frequency", "presence", "penalty",
+        "length", "stop", "sequence",
+        "meta", "automatic", "persona"
+    }
+
+    # important words from the user's query
+    query_topics = query_words & important_words
+
+    # if there are no topic words, do not block the answer
+    if len(query_topics) == 0:
+        return True
+
+    # return True if the answer mentions at least one important topic word
+    return len(query_topics & answer_words) > 0
+
+
+# Main Chatbot Function
+
+# This function runs the full RAG pipeline
+def ask_chatbot(question, top_k=3, conf_threshold=0.28, debug=False):
+
+    # step 1: Clean the user question
+    clean_q = clean_text(question)
+
+    # step 2: Correct small spelling mistakes
     clean_q = correct_query_terms(clean_q)
 
-    # Greeting handling
+    # handle greetings
     greetings = ["hi", "hello", "hey", "hi there", "hey there"]
-    if clean_q in greetings:
-        return "Hi! 👋 I’m your prompt engineering assistant. Ask me anything about prompt engineering!"
 
-    # Out-of-scope filter
-    out_of_scope_terms = ["cs335", "cs355", "weather", "sports", "stock"]
+    if clean_q in greetings:
+        return "Hi! 👋 I'm your prompt engineering assistant."
+
+    # handle empty input
+    if clean_q == "":
+        return "Please enter a question about prompt engineering or AI hallucinations."
+
+    # handle obvious out-of-scope questions
+    out_of_scope_terms = ["weather", "sports", "stock"]
+
     if any(term in clean_q for term in out_of_scope_terms):
         return "I don't know based on my knowledge base."
 
-    # Handle common question explicitly
-    if clean_q in ["what is prompt engineering", "explain what prompt engineering is"]:
-        return "Prompt engineering is the process of developing and improving prompts to better understand and use large language models."
+    # step 3: remove stopwords for retrieval
+    search_q = remove_stopwords(clean_q)
 
-    # Normalize token question
-    if fuzzy_match(clean_q, "what is a token") or fuzzy_match(clean_q, "what is an ai token"):
-        clean_q = "what is a token"
+    if search_q == "":
+        return "I don't know based on my knowledge base."
 
-    # Embed question
-    q_vec = embedder.encode([clean_q], convert_to_numpy=True)
-    q_vec = normalize(q_vec)
+    # step 4: score all knowledge base chunks
+    scores = compute_scores(search_q, clean_q)
 
-    # Similarity scoring
-    semantic_scores = (q_vec @ kb_vectors.T).flatten()
-    
-    keyword_scores = np.array([
-        keyword_overlap_score(clean_q, kb) for kb in knowledge_base
-    ])
-
-    phrase_scores = np.array([
-        phrase_match_boost(clean_q, kb) for kb in knowledge_base
-    ])
-
-    scores = (
-        0.4 * semantic_scores +
-        0.3 * keyword_scores +
-        0.3 * phrase_scores
-    )
+    # step 5: retrieve top-k chunks
     top_indices = np.argsort(scores)[::-1][:top_k]
+
+    # highest retrieval score.
     top_score = float(scores[top_indices[0]])
 
+    # Optional debug mode shows what the system retrieved
     if debug:
-        print("Cleaned:", clean_q)
+        print("Original question:", question)
+        print("Cleaned question:", clean_q)
+        print("Search question:", search_q)
+        print("Intent:", detect_intent(clean_q))
         print("Top score:", top_score)
+        print("Top matches:")
 
-    # Confidence check
+        for i in top_indices:
+            print("-", knowledge_base[i])
+
+    # step 6: If retrieval confidence is too low, do not guess
     if top_score < conf_threshold:
         return "I don't know based on my knowledge base."
 
-    # Build context
-    context = "\n- " + "\n- ".join([knowledge_base[i] for i in top_indices])
+    # step 7: build retrieved context
+    # this is the "Augmented" part of Retrieval-Augmented Generation
+    context = "\n".join(
+        [f"Context {rank + 1}: {knowledge_base[i]}" for rank, i in enumerate(top_indices)]
+    )
 
-    # Prompt
+    # step 8: build the generation prompt
+    # The model is instructed to answer only from retrieved context.
     prompt = (
-    "You are a helpful educational chatbot.\n"
-    "Answer ONLY using the context.\n"
-    "Write the answer as one clear, complete sentence.\n"
-    "Do not answer with only a phrase.\n"
-    "If unsure, say: I don't know based on my knowledge base.\n\n"
-    f"Context:{context}\n\n"
-    f"Question: {question}\n"
-    "Answer in one complete sentence:"
-)
+        "You are a friendly prompt engineering tutor.\n"
+        "Answer the user's question using ONLY the contexts below.\n"
+        "Prefer Context 1 unless another context directly answers better.\n"
+        "Do not use outside knowledge.\n"
+        "If the contexts do not answer the question, say: I don't know based on my knowledge base.\n"
+        "Write one concise complete sentence.\n\n"
+        f"{context}\n\n"
+        f"Question: {question}\n"
+        "Answer:"
+    )
 
+    # step 9: Generate answer using FLAN-T5
     answer = generate_answer(prompt)
 
-    if len(answer.split()) < 4:
-
+    # step 10: If the model gives a very short answer, return the best retrieved chunk
+    if len(answer.split()) < 5:
         return knowledge_base[top_indices[0]]
 
+    # step 11: If the answer drifts off-topic, return the best retrieved chunk
+    if not answer_mentions_topic(answer, search_q):
+        return knowledge_base[top_indices[0]]
+
+    # final answer
     return answer
