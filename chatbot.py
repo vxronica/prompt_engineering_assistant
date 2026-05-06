@@ -46,6 +46,7 @@ knowledge_base = [
     "A frequency penalty reduces repeated wording by discouraging tokens that have already appeared often.",
     "A presence penalty discourages repeated tokens regardless of how many times they appeared.",
     "Max length limits the number of tokens in a model response.",
+    "Tokens are important because language models read, generate, and limit text based on tokens rather than full words.",
 
     # prompt Writing
     "Good prompts usually include clear instructions, relevant context, input data, and a desired output format.",
@@ -59,6 +60,7 @@ knowledge_base = [
     "Output indicators tell the model what format the answer should follow, such as a list, paragraph, table, or summary.",
     "Tell the model what to do rather than focusing only on what not to do.",
     "If a task is large, break it into smaller subtasks so the model can handle each part more clearly.",
+    "Subtasks help because they break large prompts into smaller and clearer steps that are easier for the model to follow.",
     "Designing prompts is an iterative process, so users should start simple and adjust the prompt based on the output.",
     "Prompt engineering helps users communicate more effectively with AI systems.",
 
@@ -69,16 +71,21 @@ knowledge_base = [
     "To reduce hallucinations, provide reliable reference material for the model to use.",
     "To reduce hallucinations, ask the model to cite sources or explain where information came from.",
     "To reduce hallucinations, give the model permission to say 'I don't know' when it is unsure.",
+    "When a model is unsure of a response, it should say it does not know instead of guessing.",
+    "If a model is unsure of a response, it may generate unreliable or hallucinated information.",
     "To reduce hallucinations, ask the model to review its own answer for possible inaccuracies.",
+    "To reduce incorrect responses, provide reliable context, use RAG, ask for sources, and write more specific prompts.",
     "Running the same prompt multiple times and comparing outputs can help reveal possible hallucinations.",
     "If the model gives very different answers to the same prompt, the answer may be unreliable.",
     "Asking the model to state its confidence level can help prevent it from presenting guesses as facts.",
     "A useful uncertainty prompt is: If you are uncertain about any part of your answer, state your confidence level.",
     "RAG can reduce hallucinations because the model has relevant context to use when generating an answer.",
     "Providing reference material gives the model a factual base to use when answering.",
+    "Hallucinations are bad because they can make users trust false, misleading, or unsupported information.",
  
     # RAG
     "RAG helps ground model responses in specific reference material instead of relying only on the model's internal training.",
+    "RAG stands for retrieval augmented generation, a technique where a model retrieves relevant information and uses it to generate a more grounded answer.",
     "RAG is useful for factual or knowledge-intensive questions.",
     "A RAG chatbot retrieves relevant knowledge base chunks before generating a response.",
     "In a RAG pipeline, the user question is embedded, compared to knowledge base embeddings, and matched with the most relevant contexts.",
@@ -88,6 +95,7 @@ knowledge_base = [
     "Embeddings are numerical vector representations of text used for semantic similarity comparisons.",
     "Cosine similarity measures how similar two embedding vectors are.",
     "SentenceTransformers can generate embeddings for semantic search and retrieval tasks.",
+    "Vectors are lists of numbers that represent information, such as text, in a format computers can compare.",
 
     # citations and sources
     "Asking the AI to provide citations can make its response easier to verify.",
@@ -152,7 +160,9 @@ knowledge_base = [
     # chatbot purpose
     "This chatbot teaches prompt engineering in a friendly, supportive, and slightly academic tone.",
     "This chatbot is designed for college students, AI beginners, and everyday users who want better AI responses.",
-    "This chatbot gives concise educational answers about prompting, hallucinations, and AI response quality."
+    "This chatbot gives concise educational answers about prompting, hallucinations, and AI response quality.",
+    "What is this chatbot for? This chatbot teaches prompt engineering, hallucination reduction, RAG, citations, model settings, and AI response quality.",
+    "This chatbot can provide information about prompt engineering, hallucinations, RAG, citations, embeddings, tokens, and model settings."
 ]
 
 
@@ -246,7 +256,9 @@ def correct_query_terms(text):
         "citation", "citations", "source", "sources",
         "frequency", "presence", "penalty",
         "length", "stop", "sequence",
-        "meta", "automatic", "persona"
+        "meta", "automatic", "persona",
+        "factual", "incorrect", "response", "responses",
+        "subtask", "subtasks", "chatbot"
     ]
 
     corrected_words = []
@@ -315,7 +327,9 @@ def topic_match_score(search_q, text):
         "citation", "citations", "source", "sources",
         "frequency", "presence", "penalty",
         "length", "stop", "sequence",
-        "meta", "automatic", "persona"
+        "meta", "automatic", "persona",
+         "factual", "incorrect", "response", "responses",
+        "subtask", "subtasks", "chatbot"
     }
 
     # get only important topic words from the query
@@ -344,11 +358,15 @@ def detect_intent(question):
         return "comparison"
 
     # recommendation questions
-    elif "best" in q:
+    elif (
+        "best" in q
+        or "should i use" in q
+        or "what type" in q
+    ):
         return "recommendation"
 
     # definition questions
-    elif q.startswith("what is") or q.startswith("what are") or q.startswith("define"):
+    elif q.startswith("what is") or q.startswith("what are") or q.startswith("what does") or q.startswith("define"):
         return "definition"
 
     # how-to questions
@@ -382,6 +400,7 @@ def intent_match_score(intent, text):
             or "ask" in text_lower
             or "use" in text_lower
             or "helps" in text_lower
+            or "can help" in text_lower
         ):
             return 1.0
 
@@ -397,7 +416,7 @@ def intent_match_score(intent, text):
 
     # recommendation chunks answer "best technique" style questions
     elif intent == "recommendation":
-        if "no single best" in text_lower or "depends on the task" in text_lower or "useful for" in text_lower:
+        if "no single best" in text_lower or "depends on the task" in text_lower or "useful for" in text_lower or "for factual information" in text_lower:
             return 1.0
 
     # no intent match
@@ -461,7 +480,9 @@ def answer_mentions_topic(answer, search_q):
         "citation", "citations", "source", "sources",
         "frequency", "presence", "penalty",
         "length", "stop", "sequence",
-        "meta", "automatic", "persona"
+        "meta", "automatic", "persona",
+        "factual", "incorrect", "response", "responses",
+        "subtask", "subtasks", "chatbot"
     }
 
     # important words from the user's query
@@ -497,10 +518,22 @@ def ask_chatbot(question, top_k=3, conf_threshold=0.28, debug=False):
         return "Please enter a question about prompt engineering or AI hallucinations."
 
     # handle obvious out-of-scope questions
-    out_of_scope_terms = ["weather", "sports", "stock"]
+    out_of_scope_terms = [
+        "weather",
+        "sports",
+        "stock",
+        "english paper",
+        "climate science",
+        "vector calculus",
+        "baseball",
+        "api"
+    ]
 
     if any(term in clean_q for term in out_of_scope_terms):
         return "I don't know based on my knowledge base."
+    #handling math related queiries
+    if "math" in clean_q or "mathematics" in clean_q:
+        return "For math problems, chain-of-thought prompting can help because it asks the model to work through the problem step by step."
 
     # step 3: remove stopwords for retrieval
     search_q = remove_stopwords(clean_q)
