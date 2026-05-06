@@ -2,60 +2,213 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Prompt Engineering Chatbot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt Engineering Assistant</title>
+
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body>
-        <section class="chat-panel">
-            <h2>Ask the Chatbot</h2>
 
-            <div id="chat-box" class="chat-box">
-                <div class="bot-message">
-                    Hi! Ask me something about prompt engineering.
-                </div>
+    <main class="chat-container">
+
+        <!-- Chat Header -->
+        <header class="chat-header">
+
+            <div class="avatar bot-avatar">🤖</div>
+
+            <div>
+                <h1>Prompt Engineering Assistant</h1>
+                <p>Educational AI Tutor</p>
             </div>
 
-            <div class="input-area">
-                <input id="user-input" type="text" placeholder="Type your question here...">
-                <button onclick="sendMessage()">Send</button>
+        </header>
+
+        <!-- chat Messages -->
+        <section id="chat-box" class="chat-box">
+
+            <div class="message-row bot-row">
+
+                <div class="avatar bot-avatar">🤖</div>
+
+            <div class="bot-message">
+                Hi! 👋 I'm here to help you study prompt engineering. Ask me about prompting techniques, AI hallucinations, RAG, and improving AI responses.
             </div>
+
+            </div>
+
         </section>
 
-    </div>
+        <!-- input Area -->
+        <section class="input-area">
+
+            <input
+                type="text"
+                id="user-input"
+                placeholder="Ask a question..."
+                autocomplete="off"
+            >
+
+            <button id="send-button" onclick="sendMessage()">
+                Send
+            </button>
+
+        </section>
+
+    </main>
 
     <script>
-        async function sendMessage() {
-            const input = document.getElementById("user-input");
+
+        // add user message bubble
+        function addUserMessage(message) {
+
             const chatBox = document.getElementById("chat-box");
-            const message = input.value.trim();
 
-            if (message === "") {
-                return;
-            }
+            const row = document.createElement("div");
+            row.className = "message-row user-row";
 
-            chatBox.innerHTML += `<div class="user-message">${message}</div>`;
-            input.value = "";
+            row.innerHTML = `
+                <div class="user-message">${message}</div>
+                <div class="avatar user-avatar">U</div>
+            `;
 
-            const response = await fetch("/chat", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ message: message })
-            });
+            chatBox.appendChild(row);
 
-            const data = await response.json();
-
-            chatBox.innerHTML += `<div class="bot-message">${data.response}</div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        document.getElementById("user-input").addEventListener("keypress", function(event) {
-            if (event.key === "Enter") {
-                sendMessage();
+
+        // add bot message bubble
+        function addBotMessage(message) {
+
+            const chatBox = document.getElementById("chat-box");
+
+            const row = document.createElement("div");
+            row.className = "message-row bot-row";
+
+            row.innerHTML = `
+                <div class="avatar bot-avatar">🤖</div>
+                <div class="bot-message">${message}</div>
+            `;
+
+            chatBox.appendChild(row);
+
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+
+        // show typing animation
+        function showTypingIndicator() {
+
+            const chatBox = document.getElementById("chat-box");
+
+            const row = document.createElement("div");
+
+            row.className = "message-row bot-row";
+
+            row.id = "typing-indicator";
+
+            row.innerHTML = `
+                <div class="avatar bot-avatar">🤖</div>
+
+                <div class="bot-message typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+
+            chatBox.appendChild(row);
+
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+
+        // remove typing animation
+        function removeTypingIndicator() {
+
+            const typingIndicator = document.getElementById("typing-indicator");
+
+            if (typingIndicator) {
+                typingIndicator.remove();
             }
-        });
+        }
+
+
+        // send message to Flask backend
+        async function sendMessage() {
+
+            const input = document.getElementById("user-input");
+
+            const sendButton = document.getElementById("send-button");
+
+            const userMessage = input.value.trim();
+
+            if (userMessage === "") {
+                return;
+            }
+
+            addUserMessage(userMessage);
+
+            input.value = "";
+
+            sendButton.disabled = true;
+
+            showTypingIndicator();
+
+            try {
+
+                const response = await fetch("/chat", {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message: userMessage
+                    })
+                });
+
+                const data = await response.json();
+
+                // Simulated thinking delay
+                setTimeout(() => {
+
+                    removeTypingIndicator();
+
+                    addBotMessage(data.response);
+
+                    sendButton.disabled = false;
+
+                    input.focus();
+
+                }, 700);
+
+            } catch (error) {
+
+                removeTypingIndicator();
+
+                addBotMessage(
+                    "Sorry, something went wrong. Please try again."
+                );
+
+                sendButton.disabled = false;
+            }
+        }
+
+
+        // allow Enter key to send messages
+        document.getElementById("user-input")
+            .addEventListener("keydown", function(event) {
+
+                if (event.key === "Enter") {
+                    sendMessage();
+                }
+            });
+
     </script>
+
 </body>
 </html>
