@@ -1,19 +1,22 @@
 # Prompt Engineering Chatbot
 
-An interactive chatbot and tutorial system that teaches prompt engineering concepts using a Retrieval-Augmented Generation (RAG) pipeline.
+An educational Q&A chatbot that teaches prompt engineering techniques and strategies for reducing hallucinations in AI-generated responses.
 
-This project combines a knowledge-based retrieval system with a language model to provide accurate, grounded responses while reducing hallucinations.
+This chatbot is designed for college students, AI beginners, and everyday users who want to learn how to write clearer prompts and get more reliable AI outputs.
 
 ---
 
 ## Features
 
-- Built-in tutorial panel for prompt engineering concepts
-- Chatbot powered by RAG
-- Hallucination-aware fallback responses
-- Chat-style HTML/CSS frontend
+- Retrieval-Augmented Generation (RAG) chatbot
 - Semantic search using Sentence Transformers
-- Lightweight generation using FLAN-T5
+- FLAN-T5 response generation
+- Knowledge-base grounded answers
+- Hallucination-aware fallback responses
+- Responsive chatbot UI for desktop and mobile
+- AI/user avatars
+- Typing indicator animation
+- Simulated thinking delay
 
 ---
 
@@ -52,7 +55,7 @@ prompt_engineering_assistant/
 
 ```bash
 git clone https://github.com/vxronica/prompt_engineering_assistant.git
-cd prompt-engineering-chatbot
+cd prompt_engineering_assistant
 ```
 
 ### 2. Create a virtual environment
@@ -97,22 +100,26 @@ http://127.0.0.1:5050
 
 ## How It Works
 
-1. The user enters a question in the UI.
-2. The question is cleaned and processed.
-3. The question is embedded using Sentence Transformers.
-4. The system retrieves the most relevant knowledge base entries.
-5. The retrieved context is passed into FLAN-T5.
-6. The model generates a grounded response.
-7. If confidence is low, the chatbot returns a fallback response.
-
+1. The user enters a question in the chatbot UI.
+2. The question is cleaned and corrected for small typos.
+3. The question is converted into an embedding using Sentence Transformers.
+4. The system compares the question embedding to the knowledge base embeddings.
+5. The top-k most relevant knowledge base chunks are retrieved.
+6. The retrieved chunks are inserted into a prompt for FLAN-T5.
+7. FLAN-T5 generates a concise answer using only the retrieved context.
+8. If retrieval confidence is low or the answer goes off-topic, the chatbot returns a safe fallback response.
 ---
 
 ## Example Questions
 
 - What is prompt engineering?
+- How can I write better prompts?
 - What is a token?
-- How can I reduce hallucinations?
+- What causes AI hallucinations?
 - What is RAG?
+- What is the difference between zero-shot and few-shot prompting?
+- Which is better, chain-of-thought or few-shot prompting?
+- What is temperature?
 
 ---
 
